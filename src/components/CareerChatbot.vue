@@ -1,166 +1,201 @@
 <template>
   <div class="chatbot-container">
-    <div class="chatbot-header">
-      <h2 class="futurewise-title">Career Guidance Assistant</h2>
-      <div class="chatbot-status" :class="{ online: isOnline }">
-        {{ isOnline ? 'Online' : 'Offline' }}
+    <div class="chat-header">
+      <h2>Career Assistant AI</h2>
+      <div class="model-info">
+        <span class="model-badge">Powered by Gemini</span>
       </div>
     </div>
 
-    <div class="chat-messages" ref="messagesContainer">
+    <div class="chat-messages" ref="chatContainer">
       <div v-for="(message, index) in messages" :key="index" 
-           :class="['message', message.type]">
+           :class="['message', message.role === 'user' ? 'user-message' : 'bot-message']">
         <div class="message-content">
-          <div v-if="message.type === 'bot'" class="bot-avatar">
-            <img src="@/assets/bot-avatar.png" alt="Bot Avatar" />
+          <div class="message-avatar">
+            <div v-if="message.role === 'user'" class="user-icon">👤</div>
+            <div v-else class="bot-icon">🤖</div>
           </div>
           <div class="message-text">
-            <p>{{ message.text }}</p>
-            <div v-if="message.options && message.options.length" class="message-options">
-              <button v-for="(option, optIndex) in message.options" 
-                      :key="optIndex"
-                      @click="selectOption(option)"
-                      class="option-button">
-                {{ option }}
-              </button>
-            </div>
+            <div v-html="formatMessage(message.content)"></div>
           </div>
         </div>
-        <div class="message-time">{{ message.time }}</div>
+        <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+      </div>
+      <div v-if="isLoading" class="typing-indicator">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
       </div>
     </div>
 
     <div class="chat-input">
-      <input type="text" 
-             v-model="userInput" 
-             @keyup.enter="sendMessage"
-             placeholder="Type your message here..."
-             :disabled="!isOnline" />
-      <button @click="sendMessage" 
-              :disabled="!isOnline || !userInput.trim()"
-              class="send-button">
-        Send
+      <textarea 
+        v-model="userInput"
+        @keydown.enter.prevent="handleSubmit"
+        placeholder="Ask me anything about your career..."
+        :disabled="isLoading"
+        rows="1"
+        ref="textarea"
+      ></textarea>
+      <button @click="handleSubmit" :disabled="isLoading || !userInput.trim()" class="send-button">
+        <span v-if="!isLoading">Send</span>
+        <span v-else>...</span>
       </button>
     </div>
   </div>
 </template>
 
 <script>
+import axios from 'axios';
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
+import { nextTick, onMounted, ref, watch } from 'vue';
+
 export default {
   name: 'CareerChatbot',
-  data() {
-    return {
-      isOnline: true,
-      userInput: '',
-      messages: [
-        {
-          type: 'bot',
-          text: 'Hello! I\'m your career guidance assistant. How can I help you today?',
-          time: this.getCurrentTime(),
-          options: [
-            'Career Recommendations',
-            'Skill Analysis',
-            'Learning Resources',
-            'Interview Preparation'
-          ]
-        }
-      ]
+  props: {
+    initialContext: {
+      type: String,
+      default: 'You are a helpful career advisor AI assistant. Help users with their career-related questions and provide guidance.'
     }
   },
-  methods: {
-    getCurrentTime() {
-      const now = new Date();
-      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    },
-    async sendMessage() {
-      if (!this.userInput.trim() || !this.isOnline) return;
-
-      // Add user message
-      this.messages.push({
-        type: 'user',
-        text: this.userInput,
-        time: this.getCurrentTime()
-      });
-
-      const userMessage = this.userInput;
-      this.userInput = '';
-
-      // Simulate bot response
-      await this.simulateBotResponse(userMessage);
-
-      // Scroll to bottom
-      this.$nextTick(() => {
-        this.scrollToBottom();
-      });
-    },
-    async simulateBotResponse(userMessage) {
-      // Simulate typing delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Simple response logic - in a real app, this would call an API
-      let response = {
-        type: 'bot',
-        time: this.getCurrentTime(),
-        options: []
-      };
-
-      if (userMessage.toLowerCase().includes('career') || userMessage.toLowerCase().includes('job')) {
-        response.text = 'I can help you explore career options based on your skills and interests. Would you like to:';
-        response.options = ['Take a Career Assessment', 'View Career Matches', 'Explore Industries'];
-      } else if (userMessage.toLowerCase().includes('skill') || userMessage.toLowerCase().includes('learn')) {
-        response.text = 'Let\'s analyze your skills and identify areas for growth. Would you like to:';
-        response.options = ['Take a Skills Assessment', 'View Skill Gaps', 'Get Learning Recommendations'];
-      } else {
-        response.text = 'I\'m here to help with your career journey. You can ask me about:';
-        response.options = ['Career Paths', 'Skills Development', 'Job Search Tips', 'Interview Preparation'];
+  setup(props) {
+    const messages = ref([
+      {
+        role: 'assistant',
+        content: 'Hello! I\'m your AI Career Assistant. I can help you with career guidance, resume tips, interview preparation, and more. What would you like to discuss?',
+        timestamp: new Date()
       }
+    ]);
+    const userInput = ref('');
+    const isLoading = ref(false);
+    const chatContainer = ref(null);
+    const textarea = ref(null);
 
-      this.messages.push(response);
-    },
-    selectOption(option) {
-      this.userInput = option;
-      this.sendMessage();
-    },
-    scrollToBottom() {
-      const container = this.$refs.messagesContainer;
-      container.scrollTop = container.scrollHeight;
-    }
-  },
-  mounted() {
-    this.scrollToBottom();
+    const scrollToBottom = () => {
+      nextTick(() => {
+        if (chatContainer.value) {
+          chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+        }
+      });
+    };
+
+    const formatMessage = (content) => {
+      // Convert markdown to HTML and sanitize
+      const htmlContent = DOMPurify.sanitize(marked(content));
+      return htmlContent;
+    };
+
+    const formatTime = (timestamp) => {
+      return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const adjustTextareaHeight = () => {
+      if (textarea.value) {
+        textarea.value.style.height = 'auto';
+        textarea.value.style.height = textarea.value.scrollHeight + 'px';
+      }
+    };
+
+    const handleSubmit = async () => {
+      if (!userInput.value.trim() || isLoading.value) return;
+
+      const userMessage = userInput.value.trim();
+      messages.value.push({
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date()
+      });
+
+      userInput.value = '';
+      isLoading.value = true;
+      scrollToBottom();
+
+      try {
+        const response = await axios.post('http://localhost:4000/api/chat', {
+          message: userMessage,
+          context: props.initialContext,
+          history: messages.value.map(m => ({
+            role: m.role,
+            content: m.content
+          }))
+        });
+
+        messages.value.push({
+          role: 'assistant',
+          content: response.data.message,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        messages.value.push({
+          role: 'assistant',
+          content: 'I apologize, but I encountered an error. Please try again.',
+          timestamp: new Date()
+        });
+        console.error('Chat error:', error);
+      } finally {
+        isLoading.value = false;
+        scrollToBottom();
+      }
+    };
+
+    watch(userInput, adjustTextareaHeight);
+
+    onMounted(() => {
+      scrollToBottom();
+      if (textarea.value) {
+        textarea.value.focus();
+      }
+    });
+
+    const user = JSON.parse(localStorage.getItem('user'))
+    const userName = user?.name
+
+    return {
+      messages,
+      userInput,
+      isLoading,
+      chatContainer,
+      textarea,
+      handleSubmit,
+      formatMessage,
+      formatTime,
+      userName
+    };
   }
-}
+};
 </script>
 
 <style scoped>
 .chatbot-container {
   display: flex;
   flex-direction: column;
-  height: 600px;
-  background: white;
+  height: calc(100vh - 64px);
+  background: #f8f9fa;
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
-.chatbot-header {
+.chat-header {
+  padding: 1rem;
+  background: linear-gradient(135deg, #4776E6, #8E54E9);
+  color: white;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background: #3498db;
-  color: white;
 }
 
-.chatbot-status {
+.chat-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.model-badge {
+  background: rgba(255, 255, 255, 0.2);
   padding: 0.25rem 0.75rem;
-  border-radius: 15px;
-  font-size: 0.9rem;
-  background: #ff6b6b;
-}
-
-.chatbot-status.online {
-  background: #2ecc71;
+  border-radius: 1rem;
+  font-size: 0.875rem;
 }
 
 .chat-messages {
@@ -174,45 +209,55 @@ export default {
 
 .message {
   max-width: 80%;
-}
-
-.message.user {
-  align-self: flex-end;
-}
-
-.message.bot {
-  align-self: flex-start;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  animation: messageAppear 0.3s ease-out;
 }
 
 .message-content {
   display: flex;
-  gap: 0.5rem;
   align-items: flex-start;
+  gap: 8px;
 }
 
-.bot-avatar {
-  width: 40px;
-  height: 40px;
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   border-radius: 50%;
   overflow: hidden;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a2a2a;
+  border: 2px solid #3a3a3a;
 }
 
-.bot-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.user-icon, .bot-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.user-message .message-avatar {
+  order: 1;
+  margin-right: 0;
+  margin-left: 8px;
+  background: #0084ff;
+  border-color: #0073e6;
+}
+
+.bot-message .message-content {
+  flex-direction: row;
+}
+
+.user-message .message-content {
+  flex-direction: row-reverse;
 }
 
 .message-text {
-  background: #f0f0f0;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  color: #2c3e50;
-}
-
-.user .message-text {
-  background: #3498db;
-  color: white;
+  flex: 1;
+  line-height: 1.5;
 }
 
 .message-time {
@@ -222,67 +267,129 @@ export default {
   text-align: right;
 }
 
-.message-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.option-button {
-  background: white;
-  border: 1px solid #3498db;
-  color: #3498db;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.option-button:hover {
-  background: #3498db;
+.user-message {
+  margin-left: auto;
+  background: #4776E6;
   color: white;
+}
+
+.bot-message {
+  margin-right: auto;
+  background: white;
+  border: 1px solid #e0e0e0;
 }
 
 .chat-input {
+  padding: 1rem;
+  background: white;
+  border-top: 1px solid #e0e0e0;
   display: flex;
   gap: 0.5rem;
-  padding: 1rem;
-  background: #f5f7fa;
-  border-top: 1px solid #eee;
 }
 
-.chat-input input {
+textarea {
   flex: 1;
   padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 0.5rem;
+  resize: none;
+  max-height: 150px;
+  font-family: inherit;
   font-size: 1rem;
+  line-height: 1.5;
 }
 
-.chat-input input:disabled {
-  background: #eee;
-  cursor: not-allowed;
+textarea:focus {
+  outline: none;
+  border-color: #4776E6;
 }
 
 .send-button {
-  background: #3498db;
+  padding: 0.75rem 1.5rem;
+  background: #4776E6;
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-size: 1rem;
+  border-radius: 0.5rem;
   cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.send-button:disabled {
-  background: #ccc;
-  cursor: not-allowed;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
 .send-button:hover:not(:disabled) {
-  background: #2980b9;
+  background: #3461c1;
+}
+
+.send-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 0.25rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 1rem;
+  width: fit-content;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: #4776E6;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out;
+}
+
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+@keyframes messageAppear {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Style markdown content */
+:deep(p) {
+  margin: 0.5rem 0;
+}
+
+:deep(code) {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+}
+
+:deep(pre) {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+:deep(ul), :deep(ol) {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+:deep(a) {
+  color: #4776E6;
+  text-decoration: none;
+}
+
+:deep(a:hover) {
+  text-decoration: underline;
 }
 </style> 

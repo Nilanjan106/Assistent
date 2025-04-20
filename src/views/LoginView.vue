@@ -2,7 +2,7 @@
   <div class="login-page">
     <div class="login-box">
       <div class="logo-container">
-        <div class="logo-animation">🏥</div>
+        <div class="logo-animation">👋</div>
       </div>
       <h2 class="title-animation">🔐 Welcome Back</h2>
       
@@ -68,9 +68,9 @@
               <label class="label-animation">Mobile Number</label>
               <div class="mobile-input-group">
                 <select v-model="countryCode" class="country-code animated-select">
+                  <option value="+91">+91 🇮🇳</option>
                   <option value="+1">+1 🇺🇸</option>
                   <option value="+44">+44 🇬🇧</option>
-                  <option value="+91">+91 🇮🇳</option>
                   <option value="+81">+81 🇯🇵</option>
                   <option value="+86">+86 🇨🇳</option>
                   <option value="+49">+49 🇩🇪</option>
@@ -118,7 +118,7 @@
           <span class="btn-icon">
             {{ verificationType === 'email' ? '🚀' : (otpSent ? '✅' : '➡️') }}
           </span>
-          {{ verificationType === 'email' ? 'Login' : (otpSent ? 'Verify OTP' : 'Continue') }}
+          {{ verificationType === 'email' ? 'Login' : (otpSent ? 'Verify & Login' : 'Continue') }}
         </button>
       </form>
 
@@ -149,13 +149,15 @@ export default {
     const verificationType = ref('email')
     const email = ref('')
     const password = ref('')
-    const countryCode = ref('+1')
+    const countryCode = ref('+91')
     const mobileNumber = ref('')
     const otp = ref('')
     const otpSent = ref(false)
     const showPopup = ref(false)
     const popupMessage = ref('')
     const popupType = ref('')
+    const error = ref(null)
+    const loading = ref(false)
 
     const showCustomPopup = (message, type) => {
       popupMessage.value = message
@@ -167,59 +169,63 @@ export default {
     }
 
     const sendOTP = async () => {
+      loading.value = true
+      error.value = null
+      
       try {
-        const response = await axios.post('http://localhost:4000/send-otp', {
+        await axios.post('http://localhost:4000/api/auth/send-otp', {
           mobileNumber: countryCode.value + mobileNumber.value
         })
-        
-        if (response.data) {
-          otpSent.value = true
-          showCustomPopup('OTP sent successfully!', 'success')
-        }
+        otpSent.value = true
+        showCustomPopup('OTP sent successfully!', 'success')
       } catch (error) {
-        console.error('OTP Error:', error)
-        const msg = error.response?.data?.message || 'Failed to send OTP. Please check if the server is running.'
-        showCustomPopup(msg, 'error')
+        error.value = error.response?.data?.message || 'Failed to send OTP'
+        showCustomPopup(error.value, 'error')
+      } finally {
+        loading.value = false
       }
     }
 
     const handleLogin = async () => {
+      loading.value = true
+      error.value = null
+      
       try {
-        let response;
-        
+        let credentials;
         if (verificationType.value === 'email') {
-          response = await axios.post('http://localhost:4000/login', {
+          credentials = {
             email: email.value,
             password: password.value
-          })
+          }
         } else {
-          response = await axios.post('http://localhost:4000/verify-otp', {
+          credentials = {
             mobileNumber: countryCode.value + mobileNumber.value,
             otp: otp.value
-          })
+          }
         }
+
+        const response = await axios.post('http://localhost:4000/api/auth/login', credentials)
         
         if (response.data && response.data.token) {
-          // Store the token and user identifier
+          // Store user data and token
           localStorage.setItem('token', response.data.token)
-          localStorage.setItem('userIdentifier', verificationType.value === 'email' ? email.value : mobileNumber.value)
-          localStorage.setItem('isAuthenticated', 'true')
+          localStorage.setItem('user', JSON.stringify(response.data.user))
           
           showCustomPopup('Login successful!', 'success')
+          
+          // Redirect to the FUTUREWISE dashboard
           router.push('/futurewise')
         } else {
           throw new Error('Invalid response from server')
         }
       } catch (error) {
-        console.error('Login Error:', error)
-        const msg = error.response?.data?.message || 'Network error. Please check if the server is running.'
-        showCustomPopup(msg, 'error')
+        console.error('Login error:', error)
+        const errorMessage = error.response?.data?.message || 'Login failed. Please check your credentials and try again.'
+        showCustomPopup(errorMessage, 'error')
+        error.value = errorMessage
+      } finally {
+        loading.value = false
       }
-    }
-
-    // Add method to handle direct navigation from navbar
-    const handleNavbarLogin = () => {
-      router.push('/login')
     }
 
     return {
@@ -233,10 +239,10 @@ export default {
       showPopup,
       popupMessage,
       popupType,
-      handleLogin,
-      handleNavbarLogin,
+      error,
+      loading,
       sendOTP,
-      showCustomPopup
+      handleLogin
     }
   }
 }

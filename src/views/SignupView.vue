@@ -2,27 +2,10 @@
   <div class="signup-page">
     <div class="signup-box">
       <div class="logo-container">
-        <div class="logo-animation">🏥</div>
+        <div class="logo-animation">👋</div>
       </div>
       <h2 class="title-animation">🌟 Create Your Account</h2>
       
-      <div class="verification-toggle">
-        <button 
-          :class="['toggle-btn', { active: signupType === 'patient' }]"
-          @click="signupType = 'patient'"
-        >
-          <span class="icon">👤</span>
-          <span class="text">Patient</span>
-        </button>
-        <button 
-          :class="['toggle-btn', { active: signupType === 'doctor' }]"
-          @click="signupType = 'doctor'"
-        >
-          <span class="icon">👨‍⚕️</span>
-          <span class="text">Doctor</span>
-        </button>
-      </div>
-
       <div class="verification-method-toggle">
         <button 
           :class="['toggle-btn', { active: verificationType === 'email' }]"
@@ -42,7 +25,7 @@
 
       <form @submit.prevent="handleSignUp" class="form-animation">
         <div class="form-group">
-          <label class="label-animation">Name</label>
+          <label class="label-animation">Full Name</label>
           <div class="input-container">
             <span class="input-icon">👤</span>
             <input 
@@ -95,9 +78,9 @@
               <label class="label-animation">Mobile Number</label>
               <div class="mobile-input-group">
                 <select v-model="countryCode" class="country-code animated-select">
+                  <option value="+91">+91 🇮🇳</option>
                   <option value="+1">+1 🇺🇸</option>
                   <option value="+44">+44 🇬🇧</option>
-                  <option value="+91">+91 🇮🇳</option>
                   <option value="+81">+81 🇯🇵</option>
                   <option value="+86">+86 🇨🇳</option>
                   <option value="+49">+49 🇩🇪</option>
@@ -141,85 +124,11 @@
           </div>
         </transition>
 
-        <!-- Additional fields for doctors -->
-        <transition name="fade-slide" mode="out-in">
-          <div v-if="signupType === 'doctor'" key="doctor-fields">
-            <div class="form-group">
-              <label class="label-animation">License Number</label>
-              <div class="input-container">
-                <span class="input-icon">📋</span>
-                <input 
-                  type="text" 
-                  v-model="licenseNumber" 
-                  required 
-                  placeholder="Enter your medical license number" 
-                  class="animated-input"
-                />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="label-animation">Specialization</label>
-              <div class="input-container">
-                <span class="input-icon">🏥</span>
-                <input 
-                  type="text" 
-                  v-model="specialization" 
-                  required 
-                  placeholder="Enter your specialization" 
-                  class="animated-input"
-                />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="label-animation">Years of Experience</label>
-              <div class="input-container">
-                <span class="input-icon">⏳</span>
-                <input 
-                  type="number" 
-                  v-model="experience" 
-                  required 
-                  placeholder="Years of experience" 
-                  min="0" 
-                  class="animated-input"
-                />
-              </div>
-            </div>
-          </div>
-        </transition>
-
-        <!-- Additional fields for patients -->
-        <transition name="fade-slide" mode="out-in">
-          <div v-if="signupType === 'patient'" key="patient-fields">
-            <div class="form-group">
-              <label class="label-animation">Date of Birth</label>
-              <div class="input-container">
-                <span class="input-icon">📅</span>
-                <input 
-                  type="date" 
-                  v-model="dateOfBirth" 
-                  required 
-                  class="animated-input"
-                />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="label-animation">Gender</label>
-              <div class="input-container">
-                <span class="input-icon">⚧</span>
-                <select v-model="gender" required class="animated-select">
-                  <option value="">Select gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </transition>
-
         <button type="submit" class="btn-submit hover-animation">
-          <span class="btn-icon">✨</span>
-          Sign Up as {{ signupType === 'patient' ? 'Patient' : 'Doctor' }}
+          <span class="btn-icon">
+            {{ verificationType === 'email' ? '🚀' : (otpSent ? '✅' : '➡️') }}
+          </span>
+          {{ verificationType === 'email' ? 'Sign Up' : (otpSent ? 'Verify & Sign Up' : 'Continue') }}
         </button>
       </form>
 
@@ -242,29 +151,24 @@
 import axios from 'axios'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { userService } from '../services/userService'
 
 export default {
-  name: 'SignUpView',
+  name: 'SignupView',
   setup() {
     const router = useRouter()
-    const signupType = ref('patient')
     const verificationType = ref('email')
     const name = ref('')
     const email = ref('')
     const password = ref('')
-    const countryCode = ref('+1')
+    const countryCode = ref('+91')
     const mobileNumber = ref('')
     const otp = ref('')
     const otpSent = ref(false)
-    const licenseNumber = ref('')
-    const specialization = ref('')
-    const experience = ref('')
-    const dateOfBirth = ref('')
-    const gender = ref('')
     const showPopup = ref(false)
     const popupMessage = ref('')
     const popupType = ref('')
+    const error = ref(null)
+    const loading = ref(false)
 
     const showCustomPopup = (message, type) => {
       popupMessage.value = message
@@ -276,75 +180,95 @@ export default {
     }
 
     const sendOTP = async () => {
+      loading.value = true
+      error.value = null
+      
       try {
-        const response = await axios.post('http://localhost:4000/send-otp', {
+        await axios.post('http://localhost:4000/api/auth/send-otp', {
           mobileNumber: countryCode.value + mobileNumber.value
         })
-        
-        if (response.data) {
-          otpSent.value = true
-          showCustomPopup('OTP sent successfully!', 'success')
-        }
+        otpSent.value = true
+        showCustomPopup('OTP sent successfully!', 'success')
       } catch (error) {
-        console.error('OTP Error:', error)
-        const msg = error.response?.data?.message || 'Failed to send OTP. Please check if the server is running.'
-        showCustomPopup(msg, 'error')
+        error.value = error.response?.data?.message || 'Failed to send OTP'
+        showCustomPopup(error.value, 'error')
+      } finally {
+        loading.value = false
       }
     }
 
     const handleSignUp = async () => {
+      loading.value = true;
+      error.value = null;
+      
       try {
-        let response;
-        
+        let userData = {
+          name: name.value,
+          userType: 'user'
+        };
+
         if (verificationType.value === 'email') {
-          response = await axios.post('http://localhost:4000/register', {
-            name: name.value,
+          userData = {
+            ...userData,
             email: email.value,
-            password: password.value,
-            userType: signupType.value,
-            ...(signupType.value === 'doctor' && {
-              licenseNumber: licenseNumber.value,
-              specialization: specialization.value,
-              experience: experience.value
-            }),
-            ...(signupType.value === 'patient' && {
-              dateOfBirth: dateOfBirth.value,
-              gender: gender.value
-            })
-          })
+            password: password.value
+          };
         } else {
-          response = await axios.post('http://localhost:4000/verify-otp', {
+          userData = {
+            ...userData,
             mobileNumber: countryCode.value + mobileNumber.value,
-            otp: otp.value,
-            name: name.value,
-            userType: signupType.value,
-            ...(signupType.value === 'doctor' && {
-              licenseNumber: licenseNumber.value,
-              specialization: specialization.value,
-              experience: experience.value
-            }),
-            ...(signupType.value === 'patient' && {
-              dateOfBirth: dateOfBirth.value,
-              gender: gender.value
-            })
-          })
+            otp: otp.value
+          };
         }
-        
-        if (response.data) {
-          showCustomPopup('Signup successful! Please login.', 'success')
-          router.push('/login')
+
+        console.log('Sending registration request with data:', userData);
+
+        const response = await axios.post('http://localhost:4000/api/auth/register', userData);
+        console.log('Registration response:', response.data);
+
+        if (response.data && response.data.token) {
+          // Store user data and token
+          localStorage.setItem('token', response.data.token);
+          localStorage.setItem('user', JSON.stringify(response.data.user));
+          
+          showCustomPopup('Registration successful!', 'success');
+          
+          // Force a reload to update the navigation state
+          setTimeout(() => {
+            window.location.href = '/futurewise';
+          }, 1000);
+        } else if (response.data && response.data.message) {
+          throw new Error(response.data.message);
         } else {
-          throw new Error('Invalid response from server')
+          throw new Error('Registration failed. Please try again.');
         }
       } catch (error) {
-        console.error('Signup Error:', error)
-        const msg = error.response?.data?.message || 'Network error. Please check if the server is running.'
-        showCustomPopup(msg, 'error')
+        console.error('Registration error details:', error);
+        let errorMessage = 'Registration failed. ';
+        
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          errorMessage += error.response.data?.message || 'Please check your information and try again.';
+          console.error('Server error response:', error.response.data);
+        } else if (error.request) {
+          // The request was made but no response was received
+          errorMessage += 'No response from server. Please check your internet connection.';
+          console.error('No response received:', error.request);
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          errorMessage += error.message || 'An unexpected error occurred.';
+          console.error('Error setting up request:', error.message);
+        }
+
+        error.value = errorMessage;
+        showCustomPopup(errorMessage, 'error');
+      } finally {
+        loading.value = false;
       }
-    }
+    };
 
     return {
-      signupType,
       verificationType,
       name,
       email,
@@ -353,17 +277,13 @@ export default {
       mobileNumber,
       otp,
       otpSent,
-      licenseNumber,
-      specialization,
-      experience,
-      dateOfBirth,
-      gender,
       showPopup,
       popupMessage,
       popupType,
-      handleSignUp,
+      error,
+      loading,
       sendOTP,
-      showCustomPopup
+      handleSignUp
     }
   }
 }
@@ -411,7 +331,6 @@ export default {
   animation: slideDown 0.6s ease-out;
 }
 
-.verification-toggle,
 .verification-method-toggle {
   display: flex;
   gap: 1rem;

@@ -4,10 +4,20 @@
     <section class="hero-section">
       <div class="hero-content">
         <h1>FUTURE<span>WISE</span></h1>
-        <p class="hero-subtitle">Empowering Underprivileged Youth Through AI-Powered Career Guidance</p>
-        <div class="hero-buttons">
-          <router-link to="/login" class="cta-button primary">Get Started</router-link>
-          <router-link to="/futurewise/career-profile" class="cta-button secondary">Learn More</router-link>
+        <div v-if="isLoggedIn" class="welcome-message">
+          <p class="welcome-text">Welcome back, <span class="user-name">{{ userName }}</span>!</p>
+          <p class="hero-subtitle">Continue your journey towards a brighter future</p>
+          <div class="hero-buttons">
+            <router-link to="/futurewise" class="cta-button primary">Go to Dashboard</router-link>
+            <router-link to="/futurewise/career-profile" class="cta-button secondary">View Profile</router-link>
+          </div>
+        </div>
+        <div v-else>
+          <p class="hero-subtitle">Empowering Underprivileged Youth Through AI-Powered Career Guidance</p>
+          <div class="hero-buttons">
+            <router-link to="/login" class="cta-button primary">Get Started</router-link>
+            <router-link to="/futurewise/career-profile" class="cta-button secondary">Learn More</router-link>
+          </div>
         </div>
       </div>
     </section>
@@ -98,11 +108,27 @@
 </template>
 
 <script>
+import { computed } from 'vue'
+
 export default {
   name: 'Home',
   setup() {
+    const isLoggedIn = computed(() => {
+      return !!localStorage.getItem('token')
+    })
+
+    const userName = computed(() => {
+      try {
+        const user = JSON.parse(localStorage.getItem('user'))
+        return user?.name || 'User'
+      } catch {
+        return 'User'
+      }
+    })
+
     return {
-      // Component logic here
+      isLoggedIn,
+      userName
     }
   }
 }
@@ -322,6 +348,34 @@ export default {
 
   .section-content h2 {
     font-size: 2rem;
+  }
+}
+
+.welcome-message {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.welcome-text {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  opacity: 0.95;
+}
+
+.user-name {
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

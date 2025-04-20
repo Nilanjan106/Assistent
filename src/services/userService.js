@@ -87,5 +87,50 @@ export const userService = {
   getCachedProfile() {
     const cachedProfile = localStorage.getItem('userProfile');
     return cachedProfile ? JSON.parse(cachedProfile) : null;
+  },
+
+  // Login user
+  async login(credentials) {
+    try {
+      const response = await axios.post(`${API_URL}/auth/login`, credentials);
+      const { token, user } = response.data;
+      
+      // Store token and user data
+      localStorage.setItem('token', token);
+      localStorage.setItem('userProfile', JSON.stringify(user));
+      
+      return user;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
+  },
+
+  // Signup user
+  async signup(userData) {
+    try {
+      const response = await axios.post(`${API_URL}/auth/register`, userData);
+      const { token, user } = response.data;
+      
+      // Store token and user data
+      localStorage.setItem('token', token);
+      localStorage.setItem('userProfile', JSON.stringify(user));
+      
+      return user;
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    }
+  },
+
+  // Send OTP
+  async sendOTP(data) {
+    try {
+      const response = await axios.post(`${API_URL}/auth/send-otp`, data);
+      return response.data;
+    } catch (error) {
+      console.error('OTP error:', error);
+      throw error;
+    }
   }
 }; 
